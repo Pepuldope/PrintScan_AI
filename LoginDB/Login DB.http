@@ -1,0 +1,6 @@
+@Login_DB_HostAddress = http://localhost:5171
+
+GET {{Login_DB_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet restore:*)",
+      "Bash(export PATH=$PATH:/usr/local/share/dotnet:/usr/local/bin)",
+      "Read(//usr/local/**)",
+      "Read(//Users/peternemcok/**)",
+      "Read(//opt/homebrew/bin/**)"
+    ]
+  }
+}

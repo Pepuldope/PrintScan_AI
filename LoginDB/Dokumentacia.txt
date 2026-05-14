@@ -1,0 +1,703 @@
+================================================================================
+  DOKUMENTACIA — PrintScan AI
+  Skolsky projekt — Databazova cast
+  Autor: Peter Nemcok
+================================================================================
+
+
+--------------------------------------------------------------------------------
+1. POPIS SYSTEMU
+--------------------------------------------------------------------------------
+
+Nazov aplikacie:  PrintScan AI
+Technologie:      C# / ASP.NET Core, PostgreSQL, Npgsql, BCrypt, OpenRouter AI
+
+CO SYSTEM ROBI:
+  PrintScan AI je webova aplikacia pre diagnostiku neuspesnych 3D tlaci.
+  Pouzivatel si vytvori ucet, nahra fotografiu kazoveho vytisku a dostane
+  od AI odpoved v beznom jazyku — co presne sa pokazilo a ake nastavenia
+  zmenit v sliceri (napr. teplotu trysky, rychlost tlace, retrakcny zdvih).
+
+AKY PROBLEM RIESI:
+  Zaciatocnici v 3D tlaci casto nevedia identifikovat preco sa vytlacok
+  pokazil. Fora a dokumentacia su plne technickeho zargonu. PrintScan AI
+  funguje ako osobny diagnostik — pouzivatel iba nahra fotku a system mu
+  povie co sa stalo a ako to opravit.
+
+HLAVNE FUNKCIE:
+  - Registracia a prihlasenie (JWT tokeny, hesla hashuju bcryptom)
+  - Profil pouzivatela (model tlaciarene, typ filamentu)
+  - Chat s AI — nahravanie fotiek (max 3 na spravu, max 6 na chat)
+  - Historia chatov (max 5 chatov; najstarsi sa maze automaticky)
+  - Moznost pinnout jeden chat (nebude automaticky zmazany)
+  - Ulozenie celej konverzacie v databaze (bez fotiek — tie sa neuchovavaju)
+
+AKO FUNGUJE ARCHITEKTURA (frontend → backend → databaza):
+  Pouzivatel pracuje len s webovym rozhranim (frontend).
+  Frontend komunikuje s backendom cez REST API (HTTP requesty / JSON).
+  Backend spracuje request, vykona logiku a ulozi/nacita data z databazy.
+  Databaza trvalo uchova vsetky data (pouzivatelia, chaty, spravy, profily).
+
+  Frontend (HTML/CSS/JS)
+       ↓  HTTP POST /api/auth/login
+  Backend (ASP.NET Core — Program.cs, Services, Repositories)
+       ↓  SQL SELECT FROM users WHERE email = @email
+  Databaza (PostgreSQL)
+
+
+--------------------------------------------------------------------------------
+2. ZOZNAM ENTIT (TABULIEK)
+--------------------------------------------------------------------------------
+
+  Cislo  Nazov tabulky     Popis
+  -----  ---------------   -----------------------------------------------
+    1.   users             Pouzivatelia systemu (ucty)
+    2.   user_profiles     Nastavenia tlaciarene a filamentu pouzivatela
+    3.   chats             Konverzacie (chaty) pouzivatela s AI
+    4.   messages          Jednotlive spravy v konverzacii
+
+
+--------------------------------------------------------------------------------
+3. ATRIBUTY ENTIT S DATOVYMI TYPMI
+--------------------------------------------------------------------------------
+
+TABULKA: users
+  Atribut      Datovy typ       Obmedzenia              Popis
+  -----------  ---------------  ----------------------  -----------------------
+  id           SERIAL           PRIMARY KEY             Automaticky ID
+  name         VARCHAR(100)     NOT NULL                Meno pouzivatela
+  email        VARCHAR(150)     NOT NULL, UNIQUE        Emailova adresa
+  password     VARCHAR(120)     NOT NULL                bcrypt hash hesla
+  is_active    BOOLEAN          NOT NULL, DEFAULT TRUE  Je ucet aktivny?
+  role         VARCHAR(50)      NOT NULL, DEFAULT 'user' Rola (user / admin)
+
+TABULKA: user_profiles
+  Atribut       Datovy typ      Obmedzenia                     Popis
+  ------------  --------------  -----------------------------  --------------------
+  user_id       INTEGER         PRIMARY KEY, FK → users(id)   Cudzí klúč na usera
+  printer_name  VARCHAR(200)    NOT NULL, DEFAULT ''           Model tlaciarene
+  filament_type VARCHAR(200)    NOT NULL, DEFAULT ''           Typ filamentu
+  slicer        VARCHAR(100)    NOT NULL, DEFAULT ''           Slicovaci software
+
+  Poznamka: user_id je zaroven PRIMARY KEY aj FOREIGN KEY. Jeden zaznam = jeden
+  user. Tabulka existuje kvoli oddeleniu zakladnych dat usera od jeho nastaveni.
+
+TABULKA: chats
+  Atribut      Datovy typ      Obmedzenia                   Popis
+  -----------  --------------  ---------------------------  --------------------------
+  id           SERIAL          PRIMARY KEY                  Automaticky ID
+  user_id      INTEGER         NOT NULL, FK → users(id)    Vlastnik chatu
+  title        VARCHAR(200)    NOT NULL, DEFAULT 'New Chat' Nazov konverzacie
+  is_pinned    BOOLEAN         NOT NULL, DEFAULT FALSE      Je chat pinnouty?
+  photo_count  INTEGER         NOT NULL, DEFAULT 0          Celkovy pocet fotiek
+  created_at   TIMESTAMPTZ     NOT NULL, DEFAULT NOW()      Cas vytvorenia
+  updated_at   TIMESTAMPTZ     NOT NULL, DEFAULT NOW()      Cas poslednej aktivity
+
+TABULKA: messages
+  Atribut      Datovy typ      Obmedzenia                   Popis
+  -----------  --------------  ---------------------------  --------------------------
+  id           SERIAL          PRIMARY KEY                  Automaticky ID
+  chat_id      INTEGER         NOT NULL, FK → chats(id)    Konverzacia (chat)
+  role         VARCHAR(20)     NOT NULL                     'user' alebo 'assistant'
+  content      TEXT            NOT NULL                     Text spravy
+  photo_count  INTEGER         NOT NULL, DEFAULT 0          Pocet fotiek v sprave
+  created_at   TIMESTAMPTZ     NOT NULL, DEFAULT NOW()      Cas odoslania
+
+
+--------------------------------------------------------------------------------
+4. VZTAHY MEDZI ENTITAMI
+--------------------------------------------------------------------------------
+
+  a) users  ──1:1──  user_profiles
+     ---------------------------------------------------------------
+     Jeden pouzivatel ma prave jeden profil (nastavenia tlaciarene).
+     Jeden profil patri prave jednemu pouzivatelovi.
+     Implementacia: user_profiles.user_id je PRIMARY KEY aj FOREIGN KEY
+     na users.id s ON DELETE CASCADE.
+     Pojmenovanie vztahu: "pouzivatel MA NASTAVENY profil"
+
+  b) users  ──1:N──  chats
+     ---------------------------------------------------------------
+     Jeden pouzivatel moze mat viacero chatov (konverzacii).
+     Kazdy chat patri prave jednemu pouzivatelovi.
+     Implementacia: chats.user_id je FOREIGN KEY na users.id
+     s ON DELETE CASCADE.
+     Pojmenovanie vztahu: "pouzivatel OTVARA konverzaciu"
+
+  c) chats  ──1:N──  messages
+     ---------------------------------------------------------------
+     Jedna konverzacia obsahuje viacero sprav.
+     Kazda sprava patri prave jednej konverzacii.
+     Implementacia: messages.chat_id je FOREIGN KEY na chats.id
+     s ON DELETE CASCADE.
+     Pojmenovanie vztahu: "konverzacia OBSAHUJE spravy"
+
+  Poznamka k M:N:
+     V tomto systeme sa M:N vztah nevyskytuje. Neexistuju zdielane entity
+     medzi viacerymi vlastnikmi (napr. sprava patri iba jednemu chatu,
+     chat iba jednemu pouzivatelovi). Preto nie je potrebna prirazovacia
+     tabulka (junction table).
+
+
+--------------------------------------------------------------------------------
+5. OBMEDZENIA (CONSTRAINTS)
+--------------------------------------------------------------------------------
+
+UNIKATNOST (UNIQUE):
+  - users.email             Jeden email = jeden ucet. Rovnaky email sa nemoze
+                            zaregistrovat dvakrat.
+
+NOT NULL (povinne polia):
+  - users:          name, email, password, is_active, role
+  - user_profiles:  user_id, printer_name, filament_type, slicer
+  - chats:          user_id, title, is_pinned, photo_count, created_at, updated_at
+  - messages:       chat_id, role, content, photo_count, created_at
+
+DEFAULT HODNOTY (predvolene hodnoty):
+  - users.is_active      = TRUE       (novy ucet je hned aktivny)
+  - users.role           = 'user'     (standardna rola pre noveho pouzivatela)
+  - chats.is_pinned      = FALSE      (novy chat nie je pinnouty)
+  - chats.photo_count    = 0          (novy chat zacina bez fotiek)
+  - chats.title          = 'New Chat' (predbezny nazov, zmeni sa po prvej sprave)
+  - messages.photo_count = 0          (textova sprava nema fotky)
+  - vsetky *_at polia    = NOW()      (cas sa nastavi automaticky)
+
+CUDZLE KLUCE s ON DELETE CASCADE:
+  - user_profiles.user_id → users.id
+    Zmazanie pouzivatela automaticky zmaze aj jeho profil.
+  - chats.user_id         → users.id
+    Zmazanie pouzivatela automaticky zmaze aj jeho chaty.
+  - messages.chat_id      → chats.id
+    Zmazanie chatu automaticky zmaze aj vsetky spravy v nom.
+
+APLIKACNA VRSTVA (kontroly v C# kode nad ramec DB):
+  - Heslo musi mat minimalne 6 znakov
+  - Email musi obsahovat znak '@'
+  - Max 5 chatov na pouzivatela (najstarsi nepinnouty sa automaticky vymaze)
+    → Logiku vykonava ChatRepository.CreateAsync: pred kazym INSERT skontroluje
+      pocet nepinnoutych chatov; ak je >= 5, zmaze najstarsi a az potom vlozi novy.
+  - Max 6 fotiek na chat (sledovane cez chats.photo_count)
+  - Max 1 pinnouty chat na pouzivatela (pinnoutie ineho chatu zrusi predosly)
+
+AUTOMATICKE INDEXY (PostgreSQL):
+  - users.email ma obmedzenie UNIQUE — PostgreSQL automaticky vytvori B-tree
+    index na tomto stlpci. To znamena ze prihlasovanie (SELECT WHERE email = ...)
+    je rychle aj pri velkom pocte pouzivatelov bez nutnosti rucne definovat index.
+
+
+--------------------------------------------------------------------------------
+6. NORMALIZACIA (1NF – 3NF)
+--------------------------------------------------------------------------------
+
+Normalizacia je proces usporiadania databazy tak, aby sa eliminovala
+redundancia (opakovanie dat) a zabezpecila konzistentnost.
+
+--- 1NF — PRVA NORMALNA FORMA ---
+
+Podmienka: Kazdy atribut obsahuje atomicku hodnotu (jednu jednoduchu hodnotu,
+           nie zoznam alebo skupinu). Ziadne opakovane skupiny stlpcov.
+
+Priklad porušenia 1NF (Zله):
+  users: id | name  | filament1 | filament2 | filament3
+  Toto je zle — filament je opakovana skupina.
+
+Nase riesenie (SPRAVNE — splna 1NF):
+  - Vsetky atributy su skalarne: VARCHAR, INTEGER, BOOLEAN, TIMESTAMPTZ, TEXT.
+  - printer_name a filament_type su jednotlive textove hodnoty v user_profiles.
+  - Neexistuju stlpce typu "photo1, photo2, photo3" — fotky sa ani neukladaju.
+  - Kazdy riadok reprezentuje jeden jediny zaznam.
+
+Zaver: Databaza splna 1NF.
+
+--- 2NF — DRUHA NORMALNA FORMA ---
+
+Podmienka: Databaza je v 1NF a kazdy neklucovy atribut plne funkcionalne
+           zavisi od CELEHO primarneho kluca (nie od jeho casti).
+           Toto je relevantne iba pri kompozitnom (viacstlpcovom) primarnom
+           kluci.
+
+Priklad porusenia 2NF (ZLE — pri kompozitnom PK):
+  objednavky_produkty: objednavka_id | produkt_id | nazov_produktu
+  nazov_produktu zavisi iba od produkt_id (nie od celeho PK) — to je zle.
+
+Nase riesenie:
+  Vsetky nase tabulky maju jednoduchy (jednstlpcovy) primarny kluc:
+  - users:         PK = id (SERIAL)
+  - user_profiles: PK = user_id (INTEGER)
+  - chats:         PK = id (SERIAL)
+  - messages:      PK = id (SERIAL)
+
+  Pri jednoduchuom PK nemoze ciastkova zavislost vobec vzniknut.
+  Kazdy atribut zavisi od celeho PK, pretoze PK ma iba jeden stlpec.
+
+Zaver: Databaza splna 2NF.
+
+--- 3NF — TRETIA NORMALNA FORMA ---
+
+Podmienka: Databaza je v 2NF a ziadny neklucovy atribut TRANSITIVNE nezavisi
+           od ineho neklucoveho atributu. Vsetky atributy zavisia priamo
+           od primarneho kluca, nie cez iny atribut.
+
+Priklad porusenia 3NF (ZLE):
+  chats: id | user_id | user_email | user_name | title
+  user_email a user_name nezavisia od id chatu — zavisia od user_id.
+  To je transitivna zavislost: id → user_id → user_email. Zle!
+
+Nase riesenie:
+  Informacie o pouzivatelovi su VYHRADNE v tabulke users.
+  V chats je iba user_id (FK) — nie meno, email ani rola usera.
+  Na ziskanie tychto informacii sa pouziva JOIN.
+
+  Kontrola kazde tabulky:
+  - users:         name, email, password, is_active, role → zavisia priamo od id. OK.
+  - user_profiles: printer_name, filament_type → zavisia od user_id (PK). OK.
+  - chats:         title, is_pinned, photo_count, created_at, updated_at
+                   → zavisia priamo od id. user_id je len FK, nie zdroj
+                   tranzitivnej zavislosti. OK.
+  - messages:      role, content, photo_count, created_at → zavisia od id. OK.
+
+Zaver: Databaza splna 3NF.
+
+
+--------------------------------------------------------------------------------
+7. ERD DIAGRAM (ASCII)
+--------------------------------------------------------------------------------
+
+Legenda: PK = Primary Key, FK = Foreign Key
+         1──── = jedna strana vztahu
+         ────N = vela stran vztahu
+
+  +-----------------------+           +------------------------+
+  |        users          |           |     user_profiles      |
+  +-----------------------+           +------------------------+
+  | PK id                 | 1-------1 | PK/FK user_id          |
+  |    name               |           |       printer_name     |
+  |    email (UNIQUE)     |           |       filament_type    |
+  |    password           |           |       slicer           |
+  |    is_active          |           +------------------------+
+  |    role               |        Vztah: "ma nastaveny profil"
+  +-----------------------+
+            | 1
+            | 
+            |  "otvara konverzaciu"
+            | N
+  +-----------------------+
+  |        chats          |
+  +-----------------------+
+  | PK id                 |
+  | FK user_id            |
+  |    title              |
+  |    is_pinned          |
+  |    photo_count        |
+  |    created_at         |
+  |    updated_at         |
+  +-----------------------+
+            | 1
+            | 
+            |  "obsahuje spravy"
+            | N
+  +-----------------------+
+  |       messages        |
+  +-----------------------+
+  | PK id                 |
+  | FK chat_id            |
+  |    role               |
+  |    content            |
+  |    photo_count        |
+  |    created_at         |
+  +-----------------------+
+
+  Zhrnutie vztahov:
+    users    1 ──── 1   user_profiles   (pouzivatel ma nastaveny profil)
+    users    1 ──── N   chats           (pouzivatel otvara konverzacie)
+    chats    1 ──── N   messages        (konverzacia obsahuje spravy)
+
+
+--------------------------------------------------------------------------------
+8. SQL SCHEMA — IMPLEMENTACIA
+--------------------------------------------------------------------------------
+
+Subor: sql/01_create_users.sql
+
+  CREATE TABLE IF NOT EXISTS users (
+      id        SERIAL PRIMARY KEY,
+      name      VARCHAR(100) NOT NULL,
+      email     VARCHAR(150) NOT NULL UNIQUE,
+      password  VARCHAR(120) NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      role      VARCHAR(50) NOT NULL DEFAULT 'user'
+  );
+
+Subor: sql/02_create_tables.sql
+
+  CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      printer_name  VARCHAR(200) NOT NULL DEFAULT '',
+      filament_type VARCHAR(200) NOT NULL DEFAULT '',
+      slicer        VARCHAR(100) NOT NULL DEFAULT ''
+  );
+
+  CREATE TABLE IF NOT EXISTS chats (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title       VARCHAR(200) NOT NULL DEFAULT 'New Chat',
+      is_pinned   BOOLEAN NOT NULL DEFAULT FALSE,
+      photo_count INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS messages (
+      id          SERIAL PRIMARY KEY,
+      chat_id     INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      role        VARCHAR(20) NOT NULL,
+      content     TEXT NOT NULL,
+      photo_count INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+
+--------------------------------------------------------------------------------
+9. CRUD OPERACIE — REPOSITORY PATTERN
+--------------------------------------------------------------------------------
+
+Co je Repository Pattern:
+  Namiesto pisania SQL dotazov priamo v kazdom endpointovom kode mame pre
+  kazdu tabulku (entitu) vlastnu C# triedu — Repository. Tato trieda
+  obsahuje vsetky databazove operacie pre danu entitu. Endpoint len zavola
+  metodu, Repository sa postara o SQL.
+
+  Endpoint (Program.cs)  →  Repository (SQL)  →  PostgreSQL
+
+Implementovane Repository triedy:
+
+  UserRepository          (Repositories/UserRepository.cs)
+  ──────────────────────────────────────────────────────────
+  Create(name, email, password, role)  → INSERT INTO users ...
+  GetAll()                             → SELECT * FROM users
+  GetById(id)                          → SELECT ... WHERE id = @id
+  GetByEmail(email)                    → SELECT ... WHERE email = @email
+  Update(id, name, email)              → UPDATE users SET ... WHERE id = @id
+  Delete(id)                           → DELETE FROM users WHERE id = @id
+  GetAllWithProfileAsync()             → LEFT JOIN users + user_profiles
+
+  UserProfileRepository   (Repositories/UserProfileRepository.cs)
+  ──────────────────────────────────────────────────────────────
+  GetOrCreate(userId)                        → SELECT / INSERT user_profiles
+  Upsert(userId, printer, filament, slicer)  → INSERT ... ON CONFLICT DO UPDATE
+  GetAll()                             → SELECT * FROM user_profiles
+  GetById(userId)                      → SELECT ... WHERE user_id = @uid
+  Delete(userId)                       → DELETE FROM user_profiles WHERE user_id = @uid
+
+  ChatRepository          (Repositories/ChatRepository.cs)
+  ──────────────────────────────────────────────────────────
+  Create(userId)                       → INSERT INTO chats ...
+  GetAll()                             → SELECT * FROM chats
+  GetByUser(userId)                    → SELECT ... WHERE user_id = @uid
+  GetById(chatId, userId)              → SELECT ... WHERE id = @id AND user_id = @uid
+  UpdateTitle(chatId, title)           → UPDATE chats SET title = @title ...
+  IncrementPhotoCount(chatId, count)   → UPDATE chats SET photo_count = photo_count + @n
+  SetPinned(chatId, userId, isPinned)  → UPDATE chats SET is_pinned = @pinned ...
+  Touch(chatId)                        → UPDATE chats SET updated_at = NOW()
+  Delete(chatId, userId)               → DELETE FROM chats WHERE id = @id ...
+  GetByUserWithOwnerAsync()            → INNER JOIN chats + users
+  GetByUserWithMessageCountAsync()     → LEFT JOIN chats + messages
+
+  MessageRepository       (Repositories/MessageRepository.cs)
+  ──────────────────────────────────────────────────────────
+  Add(chatId, role, content, photoCount) → INSERT INTO messages ...
+  GetAll()                               → SELECT * FROM messages
+  GetByChat(chatId)                      → SELECT ... WHERE chat_id = @cid
+  GetById(id)                            → SELECT ... WHERE id = @id
+  UpdateContent(id, content)             → UPDATE messages SET content = @c ...
+  Delete(id)                             → DELETE FROM messages WHERE id = @id
+  GetByChatWithContextAsync(chatId)      → INNER JOIN messages + chats + users
+
+
+--------------------------------------------------------------------------------
+10. JOINS — MINIMALNE 3 (implementovane 4)
+--------------------------------------------------------------------------------
+
+Preco JOINy:
+  Kvoli 3NF su informacie rozdelene do viacerych tabuliek.
+  Na ziskanie kompletnych dat z viacerych tabuliek naraz pouzivame JOIN.
+
+JOIN 1 — users LEFT JOIN user_profiles
+──────────────────────────────────────────────────────────────────
+  Metoda:  UserRepository.GetAllWithProfileAsync()
+  SQL:
+    SELECT u.id, u.name, u.email, u.role,
+           p.printer_name, p.filament_type
+    FROM users u
+    LEFT JOIN user_profiles p ON p.user_id = u.id;
+
+  Preco LEFT JOIN: Chceme vsetkych pouzivatelov aj vtedy, ak este nemaju
+  vyplneny profil (printer_name, filament_type su prazdne stringy).
+  Vztah: 1:1 medzi users a user_profiles.
+
+JOIN 2 — chats INNER JOIN users
+──────────────────────────────────────────────────────────────────
+  Metoda:  ChatRepository.GetByUserWithOwnerAsync()
+  SQL:
+    SELECT c.id, c.title, c.is_pinned, c.updated_at,
+           u.name AS owner_name, u.email AS owner_email
+    FROM chats c
+    INNER JOIN users u ON u.id = c.user_id
+    WHERE c.user_id = @uid;
+
+  Preco INNER JOIN: Kazdy chat musi mat vlastnika (FK NOT NULL). Ukazuje
+  vztah 1:N — jeden user vlastni viacero chatov.
+
+JOIN 3 — chats LEFT JOIN messages
+──────────────────────────────────────────────────────────────────
+  Metoda:  ChatRepository.GetByUserWithMessageCountAsync()
+  SQL:
+    SELECT c.id, c.title, c.is_pinned,
+           COUNT(m.id) AS message_count
+    FROM chats c
+    LEFT JOIN messages m ON m.chat_id = c.id
+    WHERE c.user_id = @uid
+    GROUP BY c.id;
+
+  Preco LEFT JOIN: Chceme vidiet aj prazdne chaty (0 sprav). Ukazuje
+  vztah 1:N — jeden chat obsahuje viacero sprav.
+
+JOIN 4 — messages INNER JOIN chats INNER JOIN users  (3-tablovy JOIN)
+──────────────────────────────────────────────────────────────────
+  Metoda:  MessageRepository.GetByChatWithContextAsync()
+  SQL:
+    SELECT m.id, m.role, m.content, m.created_at,
+           c.title AS chat_title,
+           u.name  AS owner_name
+    FROM messages m
+    INNER JOIN chats c ON c.id  = m.chat_id
+    INNER JOIN users  u ON u.id = c.user_id
+    WHERE m.chat_id = @cid;
+
+  Preco 3-tablovy JOIN: Ukazuje transitivny vztah message → chat → user.
+  Z jednej spravy vieme zistit nazov konverzacie aj meno pouzivatela.
+  Demonstruje viacurovnove prepojenie tabuliek.
+
+
+--------------------------------------------------------------------------------
+11. TESTOVACIE DATA
+--------------------------------------------------------------------------------
+
+Kde su generovane: Services/DatabaseSeeder.cs
+Kedy sa spustia: Automaticky pri kazdom starte servera.
+
+Seeder skontroluje ci testovaci ucet uz existuje a ma bcrypt heslo.
+Ak ano, preskoci ho. Ak nie, vytvori novy ucet s hashovanym heslom.
+
+  Testovaci ucet 1:
+    Meno:   Peter
+    Email:  peter@test.com
+    Heslo:  peter123     (ulozene ako bcrypt hash, napr. $2a$11$xyz...)
+    Rola:   user
+
+  Testovaci ucet 2:
+    Meno:   Anna
+    Email:  anna@test.com
+    Heslo:  anna123      (bcrypt hash)
+    Rola:   user
+
+  Testovaci ucet 3:
+    Meno:   Admin
+    Email:  admin@test.com
+    Heslo:  admin123     (bcrypt hash)
+    Rola:   admin
+
+INTEGRITA DAT — preco su testovacie data konzistentne:
+
+  1. Duplicitny email nie je mozny
+     → users.email ma UNIQUE constraint, databaza odmietne druhy rovnaky email.
+
+  2. Chat nemoze odkazovat na neexistujuceho pouzivatela
+     → chats.user_id je FOREIGN KEY na users.id. Ak user neexistuje,
+       PostgreSQL odmietne INSERT.
+
+  3. Sprava nemoze existovat bez chatu
+     → messages.chat_id je FOREIGN KEY na chats.id. Ak chat neexistuje,
+       INSERT zlyhа.
+
+  4. Zmazanie pouzivatela neponecha siroty
+     → ON DELETE CASCADE zarucuje ze zmazanie usera automaticky zmaze
+       jeho profil, jeho chaty a vsetky spravy v tych chatoch.
+
+  5. photo_count nemoze byt zaporny
+     → Aplikacna vrstva (C# kod) zabranuje odoslaniu viac ako 6 fotiek
+       na chat. Pole je NOT NULL s DEFAULT 0.
+
+  6. Heslo nikdy nie je plain text
+     → Seeder vzdy vytvori ucty s bcrypt hashom. Ucty so starym
+       plain-text heslom su automaticky zmazane a nahradene.
+
+
+--------------------------------------------------------------------------------
+12. PREPOJENIE S BACKENDOM — REST API
+--------------------------------------------------------------------------------
+
+Co je REST API (z predmetu):
+  Frontend nekomunikuje priamo s databazou. Posiela HTTP requesty
+  na backend (endpointy). Backend spracuje request a odpovie JSON-om.
+
+  Frontend  →  POST /api/auth/login  →  Backend  →  SQL  →  Databaza
+  Frontend  ←  { success: true, token: "..." }  ←  Backend
+
+ZOZNAM API ENDPOINTOV:
+
+  Autentifikacia:
+    POST /api/auth/register    Registracia noveho pouzivatela
+    POST /api/auth/login       Prihlasenie, vrati JWT token
+
+  Profil:
+    GET  /api/profile          Nacitanie profilu (tlaciarensky model, filament)
+    PUT  /api/profile          Ulozenie / aktualizacia profilu
+
+  Chaty:
+    GET  /api/chats            Zoznam chatov prihlaseneho pouzivatela
+    POST /api/chats            Vytvorenie noveho chatu
+    DELETE /api/chats/{id}     Zmazanie chatu
+    PUT  /api/chats/{id}/pin   Pinnoutie / odpinnoutie chatu
+
+  Spravy:
+    GET  /api/chats/{id}/messages    Nacitanie sprav v chate
+    POST /api/chats/{id}/diagnose    Odoslanie spravy + fotky → AI odpoved
+
+AUTENTIFIKACIA — JWT Token:
+  Po prihlaseni dostane frontend JWT token (JSON Web Token).
+  Token je ulozeny v localStorage v prehliadaci.
+  Kazdy chraneny request posiela token v hlavicke:
+    Authorization: Bearer <token>
+  Backend overi token v JwtService.cs pomocou HMAC-SHA256.
+  Token plati 30 dni.
+
+TECHNOLOGICKY STACK:
+  - C# / .NET 10     — programovaci jazyk a runtime
+  - ASP.NET Core     — webovy framework (Minimal APIs)
+  - PostgreSQL        — relacna databaza
+  - Npgsql 10.0.1    — ADO.NET driver pre PostgreSQL v C#
+  - BCrypt.Net-Next  — hashovanie hesiel (nikdy plain text)
+  - OpenRouter AI    — AI diagnoza cez NVIDIA Nemotron model
+
+STRUKTURA PROJEKTU:
+  Program.cs              → Definicia API endpointov, spustenie servera
+  Database.cs             → Pripojenie na PostgreSQL (connection string z .env)
+  LoadEnv.cs              → Nacitanie premennych z .env suboru
+  Models/                 → Datove triedy (User, Chat, Message, UserProfile, ...)
+  Repositories/           → Databazova vrstva — SQL dotazy pre kazdu tabulku
+  Services/               → Logicka vrstva (AuthService, JwtService, AiService)
+  wwwroot/                → Frontend — HTML, CSS, JavaScript
+  sql/                    → SQL skripty pre vytvorenie tabuliek
+
+SPUSTENIE PROJEKTU:
+  1. Spustit PostgreSQL, vytvorit databazu "dev"
+  2. Spustit SQL skripty:
+       psql -d dev -f sql/01_create_users.sql
+       psql -d dev -f sql/02_create_tables.sql
+  3. Nastavit .env subor (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, ...)
+  4. cd "Login DB" && dotnet run
+  5. Otvorit http://localhost:5171 v prehliadaci
+
+
+--------------------------------------------------------------------------------
+13. NADSTANDARTNE KOMPONENTY — BEZPECNOST A AI
+--------------------------------------------------------------------------------
+
+Tieto dve technologie neboli explicitne vyzadovane zadanim, ale su suctou
+zodpovedneho navrhu aplikacie — bez nich by system nebol ani bezpecny, ani
+funkcny pre svoju hlavnu ulohu (diagnostika tlace).
+
+--- BCRYPT — HASHOVANIE HESIEL ---
+
+Problem: Hesla sa NIKDY nesmie ulozit ako plain text do databazy.
+  Keby utocnik ziskal pristup k databaze, videl by vsetky hesla priamo.
+
+Riesenie: BCrypt.Net-Next — kniZnica ktora implementuje bcrypt algoritmus.
+
+Ako to funguje:
+  1. Pouzivatel sa registruje, posle heslo "peter123".
+  2. AuthService.cs zavola BC.HashPassword("peter123").
+  3. BCrypt vytvori jednosmerny hash, napr.: $2a$11$3Kv9qX...aB8z
+     - "$2a$" = verzia algoritmu
+     - "$11$" = work factor (pocet iteracii = 2^11 = 2048 krat hashovanie)
+     - Zvysok = salt + vysledny hash
+  4. Do databazy (users.password) sa ulozi len tento hash — nie heslo.
+
+Overenie pri prihlaseni:
+  BC.Verify("peter123", "$2a$11$3Kv9qX...aB8z")  → true / false
+  BCrypt interne znovu zahashuje zadane heslo rovnakym saltom a porovna.
+  Povodne heslo sa nikdy nerekonstruuje — je to jednosmerny proces.
+
+Kde v kode:
+  Services/AuthService.cs   → BC.HashPassword() pri registracii
+                            → BC.Verify() pri prihlaseni
+  Services/DatabaseSeeder.cs → testovacie ucty su vzdy vytvorene s hash-om
+
+--- OPENROUTER AI API — DIAGNOSTIKA TLACE ---
+
+Problem: Analyza fotografie 3D vytlacku vyzaduje model ktory rozumie obrazkom
+  aj technicke 3D tlaci — toto presahuje moznosti klasickej databazovej logiky.
+
+Riesenie: OpenRouter — proxy sluzba ktora poskytuje jednotne OpenAI-kompatibilne
+  API pre stovky AI modelov roznych poskytovatelov.
+
+Pouzivane modely:
+  - Text model:   nvidia/nemotron-3-super-120b-a12b:free  (pre textove dotazy)
+  - Vision model: nvidia/nemotron-nano-12b-v2-vl:free     (pre fotky + text)
+  Model sa vyberie automaticky — ak request obsahuje fotku, pouzije sa vision.
+
+Ako komunikacia prebieha:
+  1. Pouzivatel posle spravu (+ volitelne fotky) cez POST /api/chats/{id}/diagnose.
+  2. Backend nacita celu historiu daneho chatu z databazy (tabulka messages).
+  3. AiService.cs zostavi JSON request pre OpenRouter:
+       - "system" sprava: inStrukcie pre AI (ton, format odpovede, pravidla)
+       - Historia chatu: vsetky predosle spravy ako "user" / "assistant" role
+       - Aktualna sprava pouzivatela (text + fotky ako base64 data URL)
+  4. Request sa posle na https://openrouter.ai/api/v1/chat/completions
+     s Authorization: Bearer <api_key> hlavickou.
+  5. OpenRouter vrati JSON s AI odpovedu.
+  6. Backend ulozi spravu aj odpoved do tabulky messages (INSERT).
+
+Fotky — preco sa neukladaju do databazy:
+  Fotky su zakodovane do base64 a poslane priamo AI API v tom istom requeste.
+  Do databazy sa neulozi samotny obrazok — iba metadata (photo_count na sprave
+  a na chate). Dovod: ulozenie binarnych suborov v PostgreSQL by bolo
+  nehospodarne a nepotrebne pre historiu konverzacie.
+
+Kde v kode:
+  Services/AiService.cs  → zostavenie requestu, volanie API, parsovanie odpovede
+  Program.cs                 → endpoint /api/chats/{id}/diagnose, predanie dat
+
+
+--------------------------------------------------------------------------------
+14. ZHRNUTIE — TOK DAT V APLIKACII
+--------------------------------------------------------------------------------
+
+Priklad: Pouzivatel sa prihlasi a posle spravu s fotkou
+
+  1.  Pouzivatel vyplni email a heslo na login stranke (frontend).
+  2.  JavaScript zachyti submit formulara (event.preventDefault).
+  3.  Frontend posle POST /api/auth/login s JSON telom:
+        { "email": "peter@test.com", "password": "peter123" }
+  4.  ASP.NET route v Program.cs prijme request.
+  5.  JSON sa automaticky namapuje na C# objekt LoginRequest.
+  6.  AuthService.LoginAsync() overi validnost dat.
+  7.  UserRepository.GetByEmailAsync() vykona SQL SELECT v PostgreSQL.
+  8.  Databaza vrati zaznam z tabulky users.
+  9.  BCrypt.Verify() porovna heslo s hashom v databaze.
+  10. JwtService.GenerateToken() vytvori JWT token.
+  11. Backend vrati JSON: { success: true, token: "eyJ..." }
+  12. Frontend ulozi token do localStorage.
+  13. Pouzivatel napise spravu a prida fotku.
+  14. Frontend posle POST /api/chats/{id}/diagnose (multipart/form-data).
+  15. Backend overi JWT token, nacita historiu chatu z messages.
+  16. AiService posle spravu + fotku (ako base64) na AI API.
+  17. AI vrati diagnostiku v texte.
+  18. Backend ulozi spravu pouzivatela a AI odpoved do messages (INSERT).
+  19. Backend aktualizuje chat (title, updated_at, photo_count).
+  20. Frontend zobrazi AI odpoved pouzivatelovi.
+
+================================================================================
+  Koniec dokumentacie — PrintScan AI  (14 sekcii)
+================================================================================
