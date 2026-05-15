@@ -374,6 +374,7 @@
 
     /* Photo section (larger top part) */
     .photo-section {
+      position: relative;
       border: 1.5px dashed #333;
       border-radius: 12px 12px 0 0;
       background: #1e1e1e;
@@ -382,6 +383,24 @@
       cursor: pointer;
       min-height: 80px;
     }
+
+    .photo-section-collapse-btn {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      background: none;
+      border: none;
+      color: #555;
+      cursor: pointer;
+      font-size: 0.65rem;
+      padding: 4px 6px;
+      line-height: 1;
+      border-radius: 4px;
+      transition: color 0.12s, background 0.12s;
+      z-index: 2;
+    }
+    .photo-section-collapse-btn:hover { color: #ddd; background: #2a2a2a; }
+    .photo-section.collapsed .photo-section-collapse-btn { display: none; }
 
     .photo-section.dragover {
       border-color: #d97706;
@@ -393,6 +412,30 @@
       background: #202020;
       cursor: default;
     }
+
+    .photo-section.collapsed {
+      min-height: 0;
+      padding: 6px 12px;
+      cursor: pointer;
+      border-style: solid;
+      border-color: #2e2e2e;
+    }
+    .photo-section.collapsed .photo-drop-hint,
+    .photo-section.collapsed #photo-has-content { display: none !important; }
+
+    .photo-collapsed-bar {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: #777;
+      user-select: none;
+      pointer-events: none;
+    }
+    .photo-section.collapsed .photo-collapsed-bar { display: flex; }
+    .photo-collapsed-bar .toggle-arrow { font-size: 0.65rem; color: #555; }
+    .photo-section.collapsed:hover { border-color: #3a3a3a; }
+    .photo-section.collapsed:hover .toggle-arrow { color: #aaa; }
 
     .photo-drop-hint {
       display: flex;
@@ -696,6 +739,11 @@
 
         <!-- Photo section -->
         <div class="photo-section" id="photo-section">
+          <button class="photo-section-collapse-btn" id="photo-section-collapse-btn" title="Hide">▲</button>
+          <div class="photo-collapsed-bar">
+            <span>+ Add photos</span>
+            <span class="toggle-arrow">▼</span>
+          </div>
           <div class="photo-drop-hint" id="photo-hint">
             <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
             <span class="hint-text">Drop photos here or <span style="color:#d97706;cursor:pointer;">click to add</span></span>
@@ -940,7 +988,9 @@
       // Load messages
       const msgs = await api("GET", `/api/chats/${id}/messages`);
       document.getElementById("welcome").style.display = "none";
-      renderMessages(Array.isArray(msgs) ? msgs : []);
+      const list = Array.isArray(msgs) ? msgs : [];
+      renderMessages(list);
+      setPhotoSectionCollapsed(list.length > 0);
     }
 
     function renderMessages(msgs) {
@@ -1044,6 +1094,7 @@
       const inner = container.querySelector(".messages-inner");
       if (inner) inner.remove();
       document.getElementById("welcome").style.display = "";
+      setPhotoSectionCollapsed(false);
     });
 
     // ── Pin / Delete ──────────────────────────────────────────────────────
@@ -1061,6 +1112,7 @@
         const inner = container.querySelector(".messages-inner");
         if (inner) inner.remove();
         document.getElementById("welcome").style.display = "";
+        setPhotoSectionCollapsed(false);
       }
       await loadChats();
     }
@@ -1072,8 +1124,21 @@
     const photoPreviews = document.getElementById("photo-previews");
     const fileInput     = document.getElementById("file-input");
 
+    function setPhotoSectionCollapsed(collapsed) {
+      photoSection.classList.toggle("collapsed", collapsed);
+    }
+
+    document.getElementById("photo-section-collapse-btn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      setPhotoSectionCollapsed(true);
+    });
+
     photoSection.addEventListener("click", (e) => {
       if (e.target.closest("[data-action]")) return;
+      if (photoSection.classList.contains("collapsed")) {
+        setPhotoSectionCollapsed(false);
+        return;
+      }
       if (pendingFiles.length < 3) fileInput.click();
     });
 
@@ -1088,7 +1153,11 @@
     });
 
     // Drag & drop on photo section
-    photoSection.addEventListener("dragover",  (e) => { e.preventDefault(); photoSection.classList.add("dragover"); });
+    photoSection.addEventListener("dragover",  (e) => {
+      e.preventDefault();
+      if (photoSection.classList.contains("collapsed")) setPhotoSectionCollapsed(false);
+      photoSection.classList.add("dragover");
+    });
     photoSection.addEventListener("dragleave", ()  => { photoSection.classList.remove("dragover"); });
     photoSection.addEventListener("drop",      (e) => {
       e.preventDefault();
@@ -1238,6 +1307,7 @@
           currentPhotoCount = data.photoCount;
           updatePhotoCountBar();
           addMessageToView("assistant", data.aiResponse, 0);
+          setPhotoSectionCollapsed(true);
 
           // Update chat title in sidebar
           await loadChats();
