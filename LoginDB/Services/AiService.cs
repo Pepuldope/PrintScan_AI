@@ -94,6 +94,18 @@ public class AiService
         if (hasCurrentPhotos)
         {
             var visualObservations = await GetVisualObservationsAsync(currentPhotos, userMessage);
+
+            // Vision model gates non-3D-print images by prefixing NOT_A_3D_PRINT.
+            if (visualObservations.TrimStart().StartsWith("NOT_A_3D_PRINT", StringComparison.OrdinalIgnoreCase))
+            {
+                var after = visualObservations.TrimStart();
+                var dash  = after.IndexOf('—');
+                if (dash < 0) dash = after.IndexOf('-');
+                var what  = dash >= 0 ? after[(dash + 1)..].Trim() : "";
+                var seen  = string.IsNullOrEmpty(what) ? "" : $" I see {what}.";
+                return $"That doesn't look like a 3D print.{seen} Upload a photo of an actual print (or describe what's going wrong) and I'll help.";
+            }
+
             return await DiagnoseWithTextModelAsync(userMessage, contextPrefix, history, visualObservations);
         }
 
@@ -116,7 +128,12 @@ public class AiService
                 ["image_url"] = new JsonObject { ["url"] = $"data:{mime};base64,{b64}" }
             });
 
-        var prompt = string.IsNullOrWhiteSpace(userQuestion)
+        const string gatePrefix =
+            "FIRST: decide if this image shows a 3D-printed object (or a clearly 3D-printing related subject such as a printer, nozzle, or filament spool). " +
+            "If it does NOT, respond with EXACTLY this and nothing else on the first line: NOT_A_3D_PRINT — followed by a short (max 10 words) description of what the image actually shows. " +
+            "If it IS related to 3D printing, do NOT mention this check at all and proceed straight to the description.\n\n";
+
+        var describeTask = string.IsNullOrWhiteSpace(userQuestion)
             ? "Describe every visible surface feature, texture, defect, or anomaly on this 3D print. " +
               "Be objective and specific — mention colours, layer lines, stringing, blobs, gaps, warping, drooping, rough patches, or any other physical trait you can see. " +
               "Do NOT diagnose, name causes, or suggest fixes. Only describe what you observe."
@@ -124,6 +141,8 @@ public class AiService
               "Describe every visible surface feature, texture, defect, or anomaly on this 3D print that is relevant to the user's question. " +
               "Be objective and specific — mention colours, layer lines, stringing, blobs, gaps, warping, drooping, rough patches, or any other physical trait you can see. " +
               "Do NOT diagnose, name causes, or suggest fixes. Only describe what you observe.";
+
+        var prompt = gatePrefix + describeTask;
 
         contentArr.Add(new JsonObject { ["type"] = "text", ["text"] = prompt });
 

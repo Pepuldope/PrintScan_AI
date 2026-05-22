@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PrintScan AI</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -611,6 +612,7 @@
     .modal-backdrop.open { display: flex; }
 
     .modal {
+      position: relative;
       background: #242424;
       border: 1px solid #333;
       border-radius: 16px;
@@ -675,6 +677,21 @@
     .modal-btn.secondary { background: #2e2e2e; color: #aaa; border: 1px solid #3a3a3a; }
     .modal-btn.secondary:hover { background: #383838; color: #ddd; }
 
+    .modal-close-btn {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: none;
+      border: none;
+      color: #666;
+      font-size: 1.4rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .modal-close-btn:hover { color: #ccc; background: #333; }
+
     /* Profile missing modal */
     .profile-modal .modal-actions { flex-direction: column; }
 
@@ -683,9 +700,159 @@
     ::-webkit-scrollbar-track        { background: transparent; }
     ::-webkit-scrollbar-thumb        { background: #333; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover  { background: #444; }
+
+    /* ══ Anonymous-mode "Sign in" button (replaces logout when anon) ═════ */
+    .signin-btn {
+      background: #d97706;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .signin-btn:hover { background: #b45309; }
+
+    /* ══ LOGIN WALL MODAL ═════════════════════════════════════════════════ */
+    .login-wall {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 20px;
+    }
+    .login-wall.visible { display: flex; }
+
+    .login-wall-card {
+      width: 100%;
+      max-width: 420px;
+      background: #242424;
+      border: 1px solid #333;
+      border-radius: 18px;
+      padding: 32px 28px;
+      text-align: center;
+    }
+    .login-wall-icon {
+      font-size: 2.2rem;
+      margin-bottom: 12px;
+    }
+    .login-wall-card h2 {
+      color: #fff;
+      font-size: 1.15rem;
+      margin-bottom: 10px;
+    }
+    .login-wall-card p {
+      color: #aaa;
+      font-size: 0.88rem;
+      line-height: 1.55;
+      margin-bottom: 22px;
+    }
+    .login-wall-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .btn-wall-primary,
+    .btn-wall-secondary {
+      display: block;
+      padding: 11px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      font-family: inherit;
+      text-decoration: none;
+      text-align: center;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .btn-wall-primary  { background: #d97706; color: #fff; }
+    .btn-wall-primary:hover  { background: #b45309; }
+    .btn-wall-secondary {
+      background: transparent;
+      border: 1px solid #3a3a3a;
+      color: #ccc;
+      font-weight: 600;
+    }
+    .btn-wall-secondary:hover { border-color: #555; color: #fff; }
+
+    /* ══ Mobile menu button + backdrop (hidden on desktop) ═══════════════ */
+    .mobile-menu-btn {
+      display: none;
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      z-index: 60;
+      width: 38px;
+      height: 38px;
+      background: #242424;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+    }
+    .mobile-menu-btn svg { width: 18px; height: 18px; fill: #ccc; }
+
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 40;
+    }
+    .sidebar-backdrop.open { display: block; }
+
+    /* ══ MOBILE ══════════════════════════════════════════════════════════ */
+    @media (max-width: 768px) {
+      .mobile-menu-btn { display: inline-flex; }
+
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 84%;
+        max-width: 300px;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.22s ease;
+        border-right: 1px solid #2e2e2e;
+      }
+      .sidebar.open { transform: translateX(0); }
+
+      .main { width: 100%; }
+
+      .messages-inner { padding: 56px 14px 12px; }
+
+      .welcome { padding: 0 16px; }
+      .welcome h1 { font-size: 1.35rem; }
+      .welcome p  { font-size: 0.88rem; }
+
+      .input-area { padding: 8px 10px 12px; }
+      .input-wrapper { padding: 10px; }
+      .photo-section { padding: 10px; }
+      .text-section textarea { font-size: 16px; } /* prevent iOS auto-zoom */
+    }
   </style>
 </head>
 <body>
+
+  <!-- Mobile menu toggle -->
+  <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open menu">
+    <svg viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+  </button>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
   <!-- Sidebar -->
   <aside class="sidebar">
@@ -784,6 +951,7 @@
   <!-- No-photo popup modal -->
   <div class="modal-backdrop" id="no-photo-modal">
     <div class="modal">
+      <button class="modal-close-btn" id="modal-close-btn" aria-label="Close">&times;</button>
       <h3>No photo attached</h3>
       <p>Without a photo the AI gives a less accurate diagnosis. Want to add one before sending?</p>
 
@@ -816,26 +984,95 @@
   <input type="file" id="file-input" accept="image/*" multiple style="display:none">
   <input type="file" id="modal-file-input" accept="image/*" multiple style="display:none">
 
-  <script>
-    // ── Auth guard ────────────────────────────────────────────────────────
-    const token = localStorage.getItem("token");
-    if (!token) { window.location.href = "/"; }
+  <!-- Login wall (shown when an anonymous user hits a limit) -->
+  <div class="login-wall" id="login-wall">
+    <div class="login-wall-card">
+      <div class="login-wall-icon">🔒</div>
+      <h2>Sign in to continue</h2>
+      <p id="login-wall-msg">You've reached the free limit.</p>
+      <div class="login-wall-actions">
+        <a class="btn-wall-primary" id="login-wall-signin">Sign in</a>
+        <a class="btn-wall-secondary" id="login-wall-register">Create account</a>
+      </div>
+    </div>
+  </div>
 
-    const displayName = localStorage.getItem("displayName") || "User";
-    const role        = localStorage.getItem("role") || "user";
-    const initials    = displayName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+  <script>
+    // ── Identity (signed-in or anonymous) ─────────────────────────────────
+    const token       = localStorage.getItem("token");          // null = anonymous
+    const isAnon      = !token;
+    const displayName = isAnon ? "Guest" : (localStorage.getItem("displayName") || "User");
+    const role        = isAnon ? "anon" : (localStorage.getItem("role") || "user");
+    const initials    = isAnon ? "?" : displayName.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 
     document.getElementById("user-avatar").textContent = initials;
     document.getElementById("user-name").textContent   = displayName;
-    document.getElementById("user-role").textContent   = role;
+    document.getElementById("user-role").textContent   = isAnon ? "Not signed in" : role;
 
-    document.getElementById("logout-btn").addEventListener("click", () => {
+    if (isAnon) {
+      // No profile to edit, so disable the avatar click
+      const avatarEl = document.getElementById("user-avatar");
+      avatarEl.onclick = null;
+      avatarEl.style.cursor = "default";
+      avatarEl.title = "Sign in to set up your profile";
+
+      // Replace "Log out" with a "Sign in" link
+      const logoutBtn = document.getElementById("logout-btn");
+      const signinLink = document.createElement("a");
+      signinLink.className = "signin-btn";
+      signinLink.href = "/";
+      signinLink.textContent = "Sign in";
+      logoutBtn.replaceWith(signinLink);
+    } else {
+      document.getElementById("logout-btn").addEventListener("click", () => {
+        localStorage.clear();
+        window.location.href = "/";
+      });
+    }
+
+    // ── Anonymous-mode state (localStorage-only, single conversation) ─────
+    const ANON_LIMIT      = 3;
+    let anonToken         = localStorage.getItem("anonToken") || null;
+    let anonMessages      = JSON.parse(localStorage.getItem("anonMessages") || "[]");
+    let anonUsage         = parseInt(localStorage.getItem("anonUsage") || "0", 10);
+
+    function persistAnonState() {
+      if (anonToken) localStorage.setItem("anonToken", anonToken);
+      localStorage.setItem("anonMessages", JSON.stringify(anonMessages));
+      localStorage.setItem("anonUsage", String(anonUsage));
+    }
+    function resetAnonConversation() {
+      anonMessages = [];
+      localStorage.setItem("anonMessages", "[]");
+    }
+
+    // ── Login wall (shown when an anonymous user hits a backend limit) ────
+    const loginWallEl = document.getElementById("login-wall");
+    document.getElementById("login-wall-signin").addEventListener("click", () => {
       localStorage.clear();
       window.location.href = "/";
     });
+    document.getElementById("login-wall-register").addEventListener("click", () => {
+      localStorage.clear();
+      window.location.href = "/register.html";
+    });
+    function showLoginWall(message) {
+      if (message) document.getElementById("login-wall-msg").textContent = message;
+      loginWallEl.classList.add("visible");
+    }
+    function checkRequireLogin(data) {
+      if (data && data.requireLogin) {
+        showLoginWall(data.message);
+        return true;
+      }
+      return false;
+    }
 
     // ── API helper ────────────────────────────────────────────────────────
     async function api(method, path, body = null) {
+      // Anonymous users have no server-side state; pretend the call returned nothing.
+      if (isAnon) return null;
+
       const opts = {
         method,
         headers: { Authorization: `Bearer ${token}` }
@@ -846,7 +1083,9 @@
       }
       const res = await fetch(path, opts);
       if (res.status === 401) { localStorage.clear(); window.location.href = "/"; }
-      return res.json();
+      const data = await res.json();
+      checkRequireLogin(data);
+      return data;
     }
 
     // ── State ─────────────────────────────────────────────────────────────
@@ -891,16 +1130,24 @@
     }
 
     // ── Check profile on load ─────────────────────────────────────────────
-    (async () => {
-      const profile = await api("GET", "/api/profile");
-      updateProfileCard(profile);
-      if (!profile.printerName && !profile.filamentType) {
-        const dismissed = sessionStorage.getItem("profileModalDismissed");
-        if (!dismissed) {
-          document.getElementById("profile-modal").classList.add("open");
+    if (isAnon) {
+      // Anonymous users can't save a profile — replace card content + hide edit link
+      profileCardBody.innerHTML =
+        `<div class="profile-card-empty">Sign in to save your printer setup.</div>`;
+      const editLink = document.querySelector(".profile-card-link");
+      if (editLink) editLink.style.display = "none";
+    } else {
+      (async () => {
+        const profile = await api("GET", "/api/profile");
+        updateProfileCard(profile);
+        if (!profile.printerName && !profile.filamentType) {
+          const dismissed = sessionStorage.getItem("profileModalDismissed");
+          if (!dismissed) {
+            document.getElementById("profile-modal").classList.add("open");
+          }
         }
-      }
-    })();
+      })();
+    }
 
     document.getElementById("profile-modal-skip").addEventListener("click", () => {
       sessionStorage.setItem("profileModalDismissed", "1");
@@ -909,6 +1156,11 @@
 
     // ── Load chats ────────────────────────────────────────────────────────
     async function loadChats() {
+      if (isAnon) {
+        chats = [];
+        renderChatList();
+        return;
+      }
       const data = await api("GET", "/api/chats");
       if (Array.isArray(data)) {
         chats = data;
@@ -919,6 +1171,17 @@
     function renderChatList() {
       const list = document.getElementById("chat-list");
       list.innerHTML = "";
+
+      if (isAnon) {
+        const tile = document.createElement("div");
+        tile.className = "profile-card-empty";
+        tile.style.padding = "16px 14px";
+        tile.style.fontSize = "0.8rem";
+        tile.style.lineHeight = "1.5";
+        tile.innerHTML = `Sign in to save your chat history.<br><a href="/" style="color:#d97706;font-weight:600;">Sign in →</a>`;
+        list.appendChild(tile);
+        return;
+      }
 
       const pinned   = chats.filter(c => c.isPinned);
       const unpinned = chats.filter(c => !c.isPinned);
@@ -991,6 +1254,7 @@
       const list = Array.isArray(msgs) ? msgs : [];
       renderMessages(list);
       setPhotoSectionCollapsed(list.length > 0);
+      startPollingIfNeeded(id, list);
     }
 
     function renderMessages(msgs) {
@@ -1004,7 +1268,9 @@
       inner.innerHTML = "";
 
       for (const m of msgs) {
-        const isUser = m.role === "user";
+        const isUser    = m.role === "user";
+        const isPending = !isUser && m.status === "pending";
+        const isFailed  = !isUser && m.status === "failed";
         const div = document.createElement("div");
         div.className = "message";
 
@@ -1020,7 +1286,14 @@
           </div>`;
         }
         const hideText = isUser && m.content === "(photo only)" && urls.length > 0;
-        if (!hideText) bodyHtml += `<p>${isUser ? escHtml(m.content) : renderMarkdown(m.content)}</p>`;
+
+        if (isPending) {
+          bodyHtml = `<div class="typing-dots"><span></span><span></span><span></span></div>`;
+        } else if (isFailed) {
+          bodyHtml += `<p style="color:#ef4444;">${escHtml(m.content || "AI error — please try again.")}</p>`;
+        } else if (!hideText) {
+          bodyHtml += `<p>${isUser ? escHtml(m.content) : renderMarkdown(m.content)}</p>`;
+        }
 
         div.innerHTML = `
           <div class="message-header">
@@ -1073,15 +1346,17 @@
 
     // ── New chat ──────────────────────────────────────────────────────────
     document.getElementById("new-btn").addEventListener("click", async () => {
-      const chat = await api("POST", "/api/chats");
-      if (!chat.id) return;
+      if (isAnon) {
+        // Anonymous users get one conversation slot — wipe it and start over
+        resetAnonConversation();
+      } else {
+        const chat = await api("POST", "/api/chats");
+        if (!chat || !chat.id) return;
+        chats.unshift(chat);
+        await loadChats();
+        currentChatId = chat.id;
+      }
 
-      chats.unshift(chat);
-
-      // Re-fetch to get server-authoritative list (handles auto-deletion)
-      await loadChats();
-
-      currentChatId    = chat.id;
       currentPhotoCount = 0;
       noPhotoWarnShown  = false;
       pendingFiles      = [];
@@ -1242,11 +1517,10 @@
       const text = msgInput.value.trim();
       if (!text && pendingFiles.length === 0) return;
 
-      // Must have an active chat
-      if (!currentChatId) {
-        // Auto-create chat
+      // Auto-create chat for signed-in users (anonymous users don't need one)
+      if (!isAnon && !currentChatId) {
         const chat = await api("POST", "/api/chats");
-        if (!chat.id) return;
+        if (!chat || !chat.id) return;
         await loadChats();
         currentChatId = chat.id;
         currentPhotoCount = 0;
@@ -1293,32 +1567,58 @@
       fd.append("text", text);
       for (const f of files) fd.append("photos", f);
 
-      try {
-        const res = await fetch(`/api/chats/${currentChatId}/diagnose`, {
-          method:  "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body:    fd
-        });
+      // Anonymous mode: client owns the conversation history (no DB persistence),
+      // so send prior turns (text-only) for multi-turn context.
+      if (isAnon && anonMessages.length > 0) {
+        fd.append("history", JSON.stringify(
+          anonMessages.map(m => ({ role: m.role, content: m.content }))
+        ));
+      }
 
+      const url     = isAnon ? "/api/anon/diagnose" : `/api/chats/${currentChatId}/diagnose`;
+      const headers = isAnon
+        ? (anonToken ? { "X-Anon-Token": anonToken } : {})
+        : { Authorization: `Bearer ${token}` };
+
+      try {
+        const res  = await fetch(url, { method: "POST", headers, body: fd });
         const data = await res.json();
-        typingEl.remove();
+
+        if (checkRequireLogin(data)) {
+          typingEl.remove();
+          return;
+        }
 
         if (data.success) {
-          currentPhotoCount = data.photoCount;
-          updatePhotoCountBar();
-          addMessageToView("assistant", data.aiResponse, 0);
-          setPhotoSectionCollapsed(true);
-
-          // Update chat title in sidebar
-          await loadChats();
-          renderChatList();
-
-          // Scroll to bottom after all DOM updates settle
-          requestAnimationFrame(() => {
-            const container = document.getElementById("messages");
-            container.scrollTop = container.scrollHeight;
-          });
+          if (isAnon) {
+            typingEl.remove();
+            anonToken = data.anonToken || anonToken;
+            anonUsage = data.usageCount || (anonUsage + 1);
+            anonMessages.push({ role: "user",      content: displayText, photoCount });
+            anonMessages.push({ role: "assistant", content: data.aiResponse });
+            persistAnonState();
+            currentPhotoCount = photoCount;
+            updatePhotoCountBar();
+            addMessageToView("assistant", data.aiResponse, 0);
+            setPhotoSectionCollapsed(true);
+            requestAnimationFrame(() => {
+              const container = document.getElementById("messages");
+              container.scrollTop = container.scrollHeight;
+            });
+          } else {
+            // Signed-in: AI runs in the background. Server returned a pending
+            // assistant message ID. Re-sync from the server (authoritative)
+            // and start polling for completion.
+            currentPhotoCount = data.photoCount ?? currentPhotoCount;
+            updatePhotoCountBar();
+            setPhotoSectionCollapsed(true);
+            const chatIdAtSend = currentChatId;
+            await openChat(chatIdAtSend);  // renders the pending typing indicator + starts polling
+            await loadChats();
+            renderChatList();
+          }
         } else {
+          typingEl.remove();
           addMessageToView("assistant", `Error: ${data.message}`, 0);
         }
       } catch (err) {
@@ -1328,6 +1628,40 @@
         isSending = false;
         sendBtn.disabled = false;
       }
+    }
+
+    // ── Polling: keep pending assistant messages live across navigation ────
+    const pendingPollers = {};   // chatId → intervalId
+
+    function stopPolling(chatId) {
+      if (pendingPollers[chatId]) {
+        clearInterval(pendingPollers[chatId]);
+        delete pendingPollers[chatId];
+      }
+    }
+
+    function startPollingIfNeeded(chatId, msgs) {
+      const hasPending = msgs.some(m => m.role === "assistant" && m.status === "pending");
+      if (!hasPending) { stopPolling(chatId); return; }
+      if (pendingPollers[chatId]) return;   // already polling this chat
+
+      pendingPollers[chatId] = setInterval(async () => {
+        // Only refresh while this chat is still the one on screen
+        if (currentChatId !== chatId) return;
+        try {
+          const fresh = await api("GET", `/api/chats/${chatId}/messages`);
+          if (!Array.isArray(fresh)) return;
+          const stillPending = fresh.some(m => m.role === "assistant" && m.status === "pending");
+          // Re-render either way so the completed message appears or the typing indicator
+          // continues to show; renderMessages is idempotent.
+          renderMessages(fresh);
+          if (!stillPending) {
+            stopPolling(chatId);
+            await loadChats();
+            renderChatList();
+          }
+        } catch (_) { /* transient network error — keep polling */ }
+      }, 2000);
     }
 
     function addTypingIndicator() {
@@ -1417,6 +1751,16 @@
       doSend(pendingText, []);
     });
 
+    document.getElementById("modal-close-btn").addEventListener("click", closeNoPhotoModal);
+
+    noPhotoModal.addEventListener("click", (e) => {
+      if (e.target === noPhotoModal) closeNoPhotoModal();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && noPhotoModal.classList.contains("open")) closeNoPhotoModal();
+    });
+
     // ── Helpers ───────────────────────────────────────────────────────────
     function escHtml(str) {
       const d = document.createElement("div");
@@ -1435,8 +1779,39 @@
       return html;
     }
 
+    // ── Mobile sidebar toggle ─────────────────────────────────────────────
+    (() => {
+      const sidebar  = document.querySelector(".sidebar");
+      const backdrop = document.getElementById("sidebar-backdrop");
+      const menuBtn  = document.getElementById("mobile-menu-btn");
+      if (!sidebar || !backdrop || !menuBtn) return;
+
+      function open()  { sidebar.classList.add("open"); backdrop.classList.add("open"); }
+      function close() { sidebar.classList.remove("open"); backdrop.classList.remove("open"); }
+
+      menuBtn.addEventListener("click", open);
+      backdrop.addEventListener("click", close);
+      // Auto-close when picking a chat or hitting "New"
+      sidebar.addEventListener("click", (e) => {
+        const el = e.target.closest(".chat-item, .new-btn");
+        if (el) close();
+      });
+    })();
+
     // ── Init ──────────────────────────────────────────────────────────────
     loadChats();
+
+    if (isAnon && anonMessages.length > 0) {
+      document.getElementById("welcome").style.display = "none";
+      // Reuse renderMessages — it accepts the same { role, content, photoCount, imageUrls } shape
+      renderMessages(anonMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+        photoCount: m.photoCount || 0,
+        imageUrls: []
+      })));
+      setPhotoSectionCollapsed(true);
+    }
   </script>
 </body>
 </html>

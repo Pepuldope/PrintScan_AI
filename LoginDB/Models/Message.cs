@@ -8,4 +8,5 @@ public class Message
     public string Content { get; set; } = string.Empty;
     public int PhotoCount { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string Status { get; set; } = "complete";  // "pending" | "complete" | "failed"
 }

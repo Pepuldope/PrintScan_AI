@@ -14,7 +14,7 @@ public class MessageRepository
         var list = new List<Message>();
         await using var conn = _db.CreateConnection();
         await using var cmd  = new NpgsqlCommand(@"
-            SELECT id, chat_id, role, content, photo_count, created_at
+            SELECT id, chat_id, role, content, photo_count, created_at, status
             FROM messages WHERE chat_id = @cid ORDER BY created_at ASC;
         ", conn);
         cmd.Parameters.AddWithValue("cid", chatId);
@@ -24,22 +24,35 @@ public class MessageRepository
         return list;
     }
 
-    public async Task<Message> AddAsync(int chatId, string role, string content, int photoCount = 0)
+    public async Task<Message> AddAsync(int chatId, string role, string content, int photoCount = 0, string status = "complete")
     {
         await using var conn = _db.CreateConnection();
         await using var cmd  = new NpgsqlCommand(@"
-            INSERT INTO messages (chat_id, role, content, photo_count)
-            VALUES (@cid, @role, @content, @photos)
-            RETURNING id, chat_id, role, content, photo_count, created_at;
+            INSERT INTO messages (chat_id, role, content, photo_count, status)
+            VALUES (@cid, @role, @content, @photos, @status)
+            RETURNING id, chat_id, role, content, photo_count, created_at, status;
         ", conn);
         cmd.Parameters.AddWithValue("cid",    chatId);
         cmd.Parameters.AddWithValue("role",   role);
         cmd.Parameters.AddWithValue("content", content);
         cmd.Parameters.AddWithValue("photos", photoCount);
+        cmd.Parameters.AddWithValue("status", status);
 
         await using var r = await cmd.ExecuteReaderAsync();
         await r.ReadAsync();
         return MapMessage(r);
+    }
+
+    public async Task<bool> UpdateContentAndStatusAsync(int id, string content, string status)
+    {
+        await using var conn = _db.CreateConnection();
+        await using var cmd  = new NpgsqlCommand(@"
+            UPDATE messages SET content = @content, status = @status WHERE id = @id;
+        ", conn);
+        cmd.Parameters.AddWithValue("content", content);
+        cmd.Parameters.AddWithValue("status",  status);
+        cmd.Parameters.AddWithValue("id",      id);
+        return await cmd.ExecuteNonQueryAsync() > 0;
     }
 
     // ── GET ALL ────────────────────────────────────────────────────────────
@@ -48,7 +61,7 @@ public class MessageRepository
         var list = new List<Message>();
         await using var conn = _db.CreateConnection();
         await using var cmd  = new NpgsqlCommand(@"
-            SELECT id, chat_id, role, content, photo_count, created_at
+            SELECT id, chat_id, role, content, photo_count, created_at, status
             FROM messages ORDER BY created_at ASC;
         ", conn);
 
@@ -62,7 +75,7 @@ public class MessageRepository
     {
         await using var conn = _db.CreateConnection();
         await using var cmd  = new NpgsqlCommand(@"
-            SELECT id, chat_id, role, content, photo_count, created_at
+            SELECT id, chat_id, role, content, photo_count, created_at, status
             FROM messages WHERE id = @id LIMIT 1;
         ", conn);
         cmd.Parameters.AddWithValue("id", id);
@@ -92,6 +105,21 @@ public class MessageRepository
         return await cmd.ExecuteNonQueryAsync() > 0;
     }
 
+    // ── COUNT USER MESSAGES (for guest limits) ─────────────────────────────
+    /// <summary>Counts how many messages with role='user' belong to the given user across all their chats.</summary>
+    public async Task<int> CountUserMessagesByUserAsync(int userId)
+    {
+        await using var conn = _db.CreateConnection();
+        await using var cmd  = new NpgsqlCommand(@"
+            SELECT COUNT(*)
+            FROM messages m
+            INNER JOIN chats c ON c.id = m.chat_id
+            WHERE c.user_id = @uid AND m.role = 'user';
+        ", conn);
+        cmd.Parameters.AddWithValue("uid", userId);
+        return (int)(long)(await cmd.ExecuteScalarAsync())!;
+    }
+
     // ── JOIN 3: Messages with chat title and owner name (3-table JOIN) ─────
     /// <summary>
     /// Returns messages for a chat enriched with the chat title and owner's name.
@@ -103,7 +131,7 @@ public class MessageRepository
         var list = new List<(Message, string, string)>();
         await using var conn = _db.CreateConnection();
         await using var cmd  = new NpgsqlCommand(@"
-            SELECT m.id, m.chat_id, m.role, m.content, m.photo_count, m.created_at,
+            SELECT m.id, m.chat_id, m.role, m.content, m.photo_count, m.created_at, m.status,
                    c.title AS chat_title,
                    u.name  AS owner_name
             FROM messages m
@@ -116,7 +144,7 @@ public class MessageRepository
 
         await using var r = await cmd.ExecuteReaderAsync();
         while (await r.ReadAsync())
-            list.Add((MapMessage(r), r.GetString(6), r.GetString(7)));
+            list.Add((MapMessage(r), r.GetString(7), r.GetString(8)));
         return list;
     }
 
@@ -127,6 +155,7 @@ public class MessageRepository
         Role       = r.GetString(2),
         Content    = r.GetString(3),
         PhotoCount = r.GetInt32(4),
-        CreatedAt  = r.GetDateTime(5)
+        CreatedAt  = r.GetDateTime(5),
+        Status     = r.GetString(6)
     };
 }

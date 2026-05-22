@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PrintScan AI — Sign in</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -130,6 +132,42 @@
     }
 
     .footer-link a:hover { text-decoration: underline; }
+
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 18px 0 0;
+      color: #555;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .divider::before, .divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: #333;
+    }
+
+    .try-anon-link {
+      display: block;
+      text-align: center;
+      margin-top: 14px;
+      font-size: 0.82rem;
+      color: #888;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .try-anon-link:hover { color: #d97706; }
+
+    @media (max-width: 480px) {
+      .container { padding: 20px 14px; }
+      .card { padding: 22px 18px; }
+      .brand { margin-bottom: 24px; }
+      input { font-size: 16px; } /* prevent iOS auto-zoom */
+      .g_id_signin > div { width: 100% !important; }
+    }
   </style>
 </head>
 <body>
@@ -156,6 +194,22 @@
         <button class="btn" id="btn" type="submit">Sign in</button>
       </form>
       <div class="msg" id="msg"></div>
+
+      <div class="divider">or</div>
+      <div id="g_id_onload"
+           data-client_id="589636484325-eek6frv1rhr8pe22k6oggbfben35c6a0.apps.googleusercontent.com"
+           data-callback="handleGoogleSignIn"
+           data-auto_prompt="false"></div>
+      <div class="g_id_signin"
+           data-type="standard"
+           data-theme="filled_black"
+           data-size="large"
+           data-text="signin_with"
+           data-shape="rectangular"
+           data-logo_alignment="left"
+           data-width="304"
+           style="margin-top: 12px; display: flex; justify-content: center;"></div>
+      <a class="try-anon-link" href="/chat.html">Try without signing in →</a>
     </div>
 
     <div class="footer-link">
@@ -165,7 +219,9 @@
 
   <script>
     // Redirect if already logged in
-    if (localStorage.getItem("token")) window.location.href = "/chat.html";
+    if (localStorage.getItem("token")) {
+      window.location.href = "/chat.html";
+    }
 
     const form = document.getElementById("form");
     const btn  = document.getElementById("btn");
@@ -207,6 +263,30 @@
         btn.disabled = false;
       }
     });
+
+    window.handleGoogleSignIn = async function(response) {
+      showMsg("Signing in with Google...", "loading");
+      try {
+        const res  = await fetch("/api/auth/google", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ idToken: response.credential })
+        });
+        const data = await res.json();
+        if (data.success) {
+          localStorage.setItem("token",       data.token);
+          localStorage.setItem("displayName", data.displayName);
+          localStorage.setItem("email",       data.email);
+          localStorage.setItem("role",        data.role);
+          window.location.href = "/chat.html";
+        } else {
+          showMsg(data.message || "Google sign-in failed.", "error");
+        }
+      } catch {
+        showMsg("Could not connect to the server.", "error");
+      }
+    };
+
   </script>
 </body>
 </html>

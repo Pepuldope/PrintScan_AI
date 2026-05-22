@@ -91,6 +91,60 @@ public class UserRepository
         return await cmd.ExecuteNonQueryAsync() > 0;
     }
 
+    // ── GET BY GOOGLE ID ───────────────────────────────────────────────────
+    public async Task<User?> GetByGoogleIdAsync(string googleId)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd  = new NpgsqlCommand(@"
+            SELECT id, name, email, password, is_active, role
+            FROM users WHERE google_id = @gid LIMIT 1;
+        ", conn);
+        cmd.Parameters.AddWithValue("gid", googleId);
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        return await r.ReadAsync() ? MapUser(r) : null;
+    }
+
+    // ── CREATE GOOGLE USER ─────────────────────────────────────────────────
+    /// <summary>Creates a user signed in via Google. Password is a random unusable hash.</summary>
+    public async Task<User> CreateGoogleUserAsync(string name, string email, string googleId)
+    {
+        var hash = BCrypt.Net.BCrypt.HashPassword(Convert.ToHexString(RandomBytes(16)));
+        await using var conn = _database.CreateConnection();
+        await using var cmd  = new NpgsqlCommand(@"
+            INSERT INTO users (name, email, password, is_active, role, google_id)
+            VALUES (@name, @email, @password, TRUE, 'user', @gid)
+            RETURNING id, name, email, password, is_active, role;
+        ", conn);
+        cmd.Parameters.AddWithValue("name",     name);
+        cmd.Parameters.AddWithValue("email",    email);
+        cmd.Parameters.AddWithValue("password", hash);
+        cmd.Parameters.AddWithValue("gid",      googleId);
+
+        await using var r = await cmd.ExecuteReaderAsync();
+        await r.ReadAsync();
+        return MapUser(r);
+    }
+
+    // ── LINK GOOGLE TO EXISTING USER ───────────────────────────────────────
+    /// <summary>Attaches a Google sub to an existing user (found by email).</summary>
+    public async Task LinkGoogleAsync(int userId, string googleId)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd  = new NpgsqlCommand(
+            "UPDATE users SET google_id = @gid WHERE id = @id;", conn);
+        cmd.Parameters.AddWithValue("id",  userId);
+        cmd.Parameters.AddWithValue("gid", googleId);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static byte[] RandomBytes(int count)
+    {
+        var bytes = new byte[count];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
+        return bytes;
+    }
+
     // ── DELETE ─────────────────────────────────────────────────────────────
     public async Task<bool> DeleteAsync(int id)
     {
