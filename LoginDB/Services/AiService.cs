@@ -13,6 +13,7 @@ public class AiService
 {
     private static readonly HttpClient Http = new();
     private readonly string _apiKey;
+    private readonly string _httpReferer;
 
     private const string TextModel = "nvidia/nemotron-3-super-120b-a12b:free";
     private const string VisionModel = "nvidia/nemotron-nano-12b-v2-vl:free";
@@ -35,7 +36,14 @@ public class AiService
         "\n\n" +
         "DIAGNOSTIC APPROACH — follow this two-step process:\n" +
         "\n" +
-        "Step 1 — First message in a conversation (history is empty or short):\n" +
+        "BEFORE responding, check the conversation history:\n" +
+        "  - If there is NO prior assistant message, you are in Step 1.\n" +
+        "  - If there IS a prior assistant message AND the user's latest message provides information " +
+        "(settings, values, filament type, slicer, anything answering your previous questions), you are in Step 2. " +
+        "Use the entire conversation as context — the diagnosis you committed to in your previous turn still stands unless the new info changes it. " +
+        "DO NOT ask the user to re-describe the problem — you already identified it. Build on it.\n" +
+        "\n" +
+        "Step 1 — First message in a conversation (no prior assistant turn):\n" +
         "  - Once you know what the user considers a problem, identify the likely failure category.\n" +
         "  - Give a 1-line bold diagnosis.\n" +
         "  - Then ask 1–2 targeted questions you need answered before giving specific fix values. " +
@@ -45,9 +53,11 @@ public class AiService
         "  - Exception: if the user's printer, filament, AND slicer are all already known from their profile, " +
         "you may give a more complete answer but still confirm the 1–2 most critical current settings before recommending exact changes.\n" +
         "\n" +
-        "Step 2 — Follow-up messages (user has answered your questions):\n" +
+        "Step 2 — Follow-up messages (user has answered your questions, or there is any prior assistant message):\n" +
+        "  - Continue from your previous diagnosis. Do NOT restart with 'I can't diagnose without more details' " +
+        "or ask the user to describe the problem again — that information is already in the conversation above.\n" +
         "  - Give the full response in this format:\n" +
-        "    1. **Bold 1-line diagnosis**\n" +
+        "    1. **Bold 1-line diagnosis** (same as before unless the new info changes it)\n" +
         "    2. One plain-English sentence explaining WHY it happens.\n" +
         "    3. Numbered fix steps with specific values (e.g. 'Reduce temperature from 210°C to 195–200°C'). " +
         "Tailor values to the user's actual settings they told you.\n" +
@@ -75,6 +85,11 @@ public class AiService
     {
         _apiKey = Environment.GetEnvironmentVariable("AI_API_KEY")
             ?? throw new InvalidOperationException("AI_API_KEY is not set in .env");
+
+        // OpenRouter uses HTTP-Referer for attribution and rate-limit bucketing.
+        // Set PUBLIC_BASE_URL in prod (Railway) so usage shows up under the real domain.
+        _httpReferer = Environment.GetEnvironmentVariable("PUBLIC_BASE_URL")
+            ?? "http://localhost:5171";
     }
 
     public async Task<string> DiagnoseAsync(
@@ -210,7 +225,7 @@ public class AiService
         var httpContent = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json");
         var request     = new HttpRequestMessage(HttpMethod.Post, Endpoint) { Content = httpContent };
         request.Headers.Add("Authorization", $"Bearer {_apiKey}");
-        request.Headers.Add("HTTP-Referer", "http://localhost:5171");
+        request.Headers.Add("HTTP-Referer", _httpReferer);
         request.Headers.Add("X-Title", "PrintScan AI");
 
         var response = await Http.SendAsync(request);
