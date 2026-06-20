@@ -1559,8 +1559,12 @@
       document.getElementById("welcome").style.display = "none";
       addMessageToView("user", displayText, photoCount, files);
 
-      // Show typing indicator
-      const typingEl = addTypingIndicator();
+      // Show typing indicator (with staged progress text — photos take longer)
+      const typingEl = addTypingIndicator(photoCount > 0);
+      const removeTyping = () => {
+        if (typingEl._clearStageTimers) typingEl._clearStageTimers();
+        typingEl.remove();
+      };
 
       // Build FormData
       const fd = new FormData();
@@ -1585,13 +1589,13 @@
         const data = await res.json();
 
         if (checkRequireLogin(data)) {
-          typingEl.remove();
+          removeTyping();
           return;
         }
 
         if (data.success) {
           if (isAnon) {
-            typingEl.remove();
+            removeTyping();
             anonToken = data.anonToken || anonToken;
             anonUsage = data.usageCount || (anonUsage + 1);
             anonMessages.push({ role: "user",      content: displayText, photoCount });
@@ -1608,7 +1612,9 @@
           } else {
             // Signed-in: AI runs in the background. Server returned a pending
             // assistant message ID. Re-sync from the server (authoritative)
-            // and start polling for completion.
+            // and start polling for completion. openChat re-renders the message
+            // list, so clear our local typing indicator (and its stage timers).
+            removeTyping();
             currentPhotoCount = data.photoCount ?? currentPhotoCount;
             updatePhotoCountBar();
             setPhotoSectionCollapsed(true);
@@ -1618,11 +1624,11 @@
             renderChatList();
           }
         } else {
-          typingEl.remove();
+          removeTyping();
           addMessageToView("assistant", `Error: ${data.message}`, 0);
         }
       } catch (err) {
-        typingEl.remove();
+        removeTyping();
         addMessageToView("assistant", "Could not reach the server. Make sure it is running.", 0);
       } finally {
         isSending = false;
@@ -1664,7 +1670,7 @@
       }, 2000);
     }
 
-    function addTypingIndicator() {
+    function addTypingIndicator(hasPhoto = false) {
       const container = document.getElementById("messages");
       let inner = container.querySelector(".messages-inner");
       if (!inner) {
@@ -1680,9 +1686,27 @@
           <span class="message-sender">PrintScan AI</span>
         </div>
         <div class="typing-dots"><span></span><span></span><span></span></div>
+        <div class="typing-stage" style="margin-top:6px;font-size:12px;opacity:0.6;"></div>
       `;
       inner.appendChild(el);
       container.scrollTop = container.scrollHeight;
+
+      // Staged progress — free Nemotron is slow (~20–30s), so cycle through
+      // honest status text instead of leaving the user staring at silent dots.
+      const stageEl = el.querySelector(".typing-stage");
+      const stages = hasPhoto
+        ? [
+            { at: 0,     text: "Looking at your photo…" },
+            { at: 8000,  text: "Writing diagnosis…" },
+            { at: 20000, text: "Still working — free AI models are slow, hang tight…" }
+          ]
+        : [
+            { at: 0,     text: "Thinking…" },
+            { at: 6000,  text: "Writing diagnosis…" },
+            { at: 18000, text: "Still working — free AI models are slow, hang tight…" }
+          ];
+      const timers = stages.map(s => setTimeout(() => { stageEl.textContent = s.text; }, s.at));
+      el._clearStageTimers = () => timers.forEach(clearTimeout);
       return el;
     }
 

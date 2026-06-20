@@ -12,3 +12,6 @@ obj/
 
 # OS
 .DS_Store
+
+# Claude context — local only, do not publish
+CLAUDE.md
