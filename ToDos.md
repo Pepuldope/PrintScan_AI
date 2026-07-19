@@ -19,6 +19,170 @@ Status: `[ ]` open · `[~]` in progress · `[x]` done
 
 ---
 
+## Ownership split (who does what)
+
+Two lanes. **Agent-solo** = code/docs/repo changes I can implement without your accounts. **Needs you** = accounts, money, legal identity, secrets, product decisions, or console clicks only you can do. Many features need **both**: you set up X, then I wire the code.
+
+### Lane A — Agent can do alone (code / repo)
+
+#### A1. Repo hygiene & docs (start anytime)
+- [ ] Remove tracked sample uploads from git; add `wwwroot/uploads/` to `.gitignore`
+- [ ] Stop shipping `testing-credentials.txt` / gate or delete plaintext SQL seed for prod mindset
+- [ ] Gate `DatabaseSeeder` behind Development / `SEED_TEST_USERS=true` (never default-on in prod)
+- [ ] Root `README.md`: local run, env var list, deploy notes
+- [ ] Fix outdated docs (`Dokumentacia.txt` still wrong about photo storage)
+- [ ] Dockerfile: drop `chmod 777`; don’t copy test junk into image
+- [ ] `.dockerignore` hygiene
+
+#### A2. Security hardening in app code
+- [ ] CORS from env allowlist (not `AllowAnyOrigin`)
+- [ ] `AllowedHosts` from config (not `*`)
+- [ ] Rate limiting middleware (login/register/google/anon diagnose/diagnose)
+- [ ] Unify auth error messages (anti-enumeration)
+- [ ] Stronger email validation + max field lengths + password policy (>6 chars)
+- [ ] Check `IsActive` on every authenticated request
+- [ ] Sanitize AI/API errors (no `ex.Message` / raw upstream to clients)
+- [ ] Upload: max bytes, magic-byte / decode validation, MIME allowlist (jpeg/png/webp)
+- [ ] Downscale images before base64 + AI
+- [ ] Auth-gated image download endpoint (stop public static `/uploads`)
+- [ ] In-memory or DB-backed **server** anon quota (not only client JWT counter) — works without Redis for single instance
+- [ ] Transactional photo-count + chat create/delete oldest
+- [ ] Replace hand-rolled JWT with standard library **or** harden current one (exp, optional jti store later)
+- [ ] Shorten access token TTL; structure for future refresh
+- [ ] Postgres connection string via `NpgsqlConnectionStringBuilder`; make cert trust env-flagged (default verify in prod)
+- [ ] Auto-create full schema on boot (or single migrate path) so fresh DB works
+- [ ] Bound background diagnose work (channel/queue + concurrency cap + shutdown cancel) instead of naked `Task.Run`
+- [ ] Remove or ignore dead admin seed until real admin exists
+- [ ] OpenRouter referer/title from public site URL env var
+- [ ] Model IDs + temperature from env (code ready for paid models once key exists)
+
+#### A3. Product / UX code (no third parties required)
+- [ ] Landing page (value prop, how it works, CTA, disclaimer stub)
+- [ ] Empty chat-list state; first-run guidance
+- [ ] Anon usage meter UI (“2 of 3”)
+- [ ] Carry guest history across login/register (stop wiping on wall; optional merge after auth)
+- [ ] Confirm dialogs (delete chat / clear anon)
+- [ ] Pin/delete success/error toast
+- [ ] Retry failed AI message
+- [ ] Pending timeout / still-working messaging
+- [ ] Consistent API error/retry on chat list + profile load
+- [ ] Photo quota UX (block staging when over remaining)
+- [ ] Explain discarded extra files
+- [ ] Image lightbox
+- [ ] Copy / share / feedback controls on AI replies
+- [ ] Stronger markdown / structured diagnosis layout
+- [ ] In-UI AI disclaimer + footer links placeholders (Privacy / Terms)
+- [ ] Profile onboarding copy improvements
+- [ ] Mobile: safe-area, keyboard/`100vh` fixes, touch-visible pin/delete
+- [ ] A11y: dialog roles, focus trap, keyboard chat rows/upload, aria-live, focus-visible, contrast tweaks
+- [ ] Optional SK/EN string externalization (if you want bilingual — decision is yours, implementation is mine)
+
+#### A4. Feature code that stays dark until you configure services
+I can implement these fully against env vars / test doubles; they only go live after Lane B items:
+- [ ] Password reset **flow** (token table + pages) — needs email provider (B)
+- [ ] Email verification **flow** — needs email provider (B)
+- [ ] Delete account + data export endpoints/UI
+- [ ] Change password
+- [ ] Object-storage adapter (S3-compatible API) behind interface — needs bucket creds (B)
+- [ ] Stripe Checkout + webhooks + entitlement checks — needs Stripe account (B)
+- [ ] Usage metering tables + enforce free/Pro limits (limits numbers need your decision)
+- [ ] Sentry/OpenTelemetry hooks — needs DSN (B)
+- [ ] Captcha verify endpoint — needs Turnstile/hCaptcha keys (B)
+- [ ] Health check: DB ping + config presence
+
+#### A5. AI quality (offline / code)
+- [ ] Prompt + structured-output schema improvements
+- [ ] History/token budget caps in `AiService`
+- [ ] Model fallback chain in code
+- [ ] Eval harness script + folder for labeled photos (you may need to supply real failure photos)
+- [ ] Printer/filament/slicer dropdown catalogs (static JSON is fine to start)
+
+---
+
+### Lane B — Needs you to set up / decide
+
+#### B1. Hosting & access (required for any public users)
+- [ ] Railway (or other host) project alive again; billing OK
+- [ ] Managed Postgres plugin/instance
+- [ ] Set production secrets: `JWT_SECRET`, `DATABASE_URL`, `AI_API_KEY`, `GOOGLE_CLIENT_ID`, public `APP_URL` / CORS origins
+- [ ] Custom domain + DNS (optional but recommended)
+- [ ] Google Cloud console: OAuth client authorized JS origins + redirect URIs for production domain
+- [ ] Confirm whether any old prod DB/users exist; if test accounts were public, wipe or rotate
+- [ ] Merge/deploy permissions (approve PRs; who deploys)
+
+#### B2. AI budget & vendor
+- [ ] OpenRouter account with **billing** (or alternative provider)
+- [ ] Choose paid vision + text models (or approve my recommendation)
+- [ ] Hard monthly budget / kill-switch preference
+- [ ] Decide free-tier diagnose limits (anon + signed-in free) and Pro limits
+
+#### B3. Storage
+- [ ] S3-compatible bucket (Cloudflare R2 / AWS S3 / etc.) + access key + public/signed URL strategy preference
+- [ ] Retention preference (delete photos after N days?)
+
+#### B4. Email (password reset / verify)
+- [ ] Provider account (Resend, SendGrid, Postmark, …)
+- [ ] Sending domain DNS (SPF/DKIM)
+- [ ] From-address you own (e.g. `noreply@yourdomain`)
+
+#### B5. Payments (only if real freemium)
+- [ ] Stripe account (or region-appropriate PSP), KYC as required
+- [ ] Decide price (e.g. €6/mo), trial, what Pro includes
+- [ ] Create Product/Price; hand webhook secret + publishable/secret keys (via env, not chat if possible)
+- [ ] Business identity for invoices/customer support
+
+#### B6. Legal / trust (you own the words & identity)
+- [ ] Operator identity (you personally vs company) and contact email for support + privacy
+- [ ] Approve Privacy Policy + Terms (I can draft; you must approve / adapt for SK/EU)
+- [ ] AI disclaimer wording approval
+- [ ] Cookie/analytics decision (none vs Plausible/etc.)
+- [ ] If taking money in EU: imprint / consumer rules awareness (not legal advice — you may want a human check)
+
+#### B7. Optional third parties
+- [ ] Bot protection: Cloudflare Turnstile or hCaptcha site keys
+- [ ] Error tracking: Sentry (or similar) DSN
+- [ ] Uptime monitor (Better Stack, UptimeRobot, …)
+- [ ] Status page (optional)
+
+#### B8. Product decisions only you should make
+- [ ] Ship target: “safe public demo” vs “paid MVP” vs “class demo only”
+- [ ] Language: EN only vs SK/EN
+- [ ] Whether Google login stays mandatory-optional
+- [ ] Whether admin panel is in scope
+- [ ] Brand name, logo, tone for landing copy final sign-off
+- [ ] Supply ~50–100 real failed-print photos for eval (or approve synthetic/public dataset use)
+
+---
+
+### Dependency map (feature → what you must provide)
+
+| Feature | Agent does | You provide |
+|---------|------------|-------------|
+| Live site | deploy config in repo, health, Dockerfile fixes | Railway/Postgres up + secrets |
+| Safe free demo | seeder off, rate limits, anon quota, private images local/S3 adapter, landing, disclaimer | Host + `AI_API_KEY` + budget; domain; legal contact |
+| Durable private photos | storage interface + auth URLs | R2/S3 bucket + keys |
+| Password reset / verify email | tokens, pages, API | Email provider + domain DNS |
+| Paid Pro | Stripe code + entitlements | Stripe account + price decision + keys |
+| Google login in prod | keep GSI wiring | Google Console origins for real domain |
+| Monitoring | SDK wiring | Sentry DSN + uptime account |
+| Captcha | verify API + UI | Turnstile/hCaptcha keys |
+| “AI is good” claims | harness + prompts | Eval photos + paid model choice |
+
+---
+
+### Recommended sequence
+
+**You first (unblocks almost everything):**  
+1) Host + Postgres back up · 2) Fresh secrets · 3) OpenRouter billing + model choice · 4) Support/privacy email · 5) Say “demo only” vs “paid MVP”.
+
+**I first (parallel, no waiting):**  
+A1 hygiene → A2 security → A3 UX/landing → storage interface + quota + seeder gate.
+
+**Then together:**  
+Wire S3/email/Stripe only after B items exist; deploy Milestone A (safe public demo) before inviting anyone.
+
+---
+
 ## Snapshot: what exists today
 
 ### Product intent
